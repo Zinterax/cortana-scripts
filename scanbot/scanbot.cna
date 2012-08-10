@@ -1,0 +1,74 @@
+# namap-test script
+
+global('$nmapconsole $currentTarget');
+
+on ready {
+$nmapconsole = console();
+}
+
+sub scan {
+	$target = $1;
+	$currentTarget = $target;
+	elog("Attempting nmap scan of $target");
+	cmd($nmapconsole, "db_nmap -p 3389,80 $target");
+}
+
+sub custom_scan {
+        $parms = $1;
+	$currentTarget = $parms;
+        elog("Attempting nmap scan with: $parms");
+        cmd($nmapconsole, "db_nmap $parms");
+}
+
+
+on console {
+	if("*Nmap: 'QUITTING!'*" iswm $3){
+		elog("NMAP FAILED :\(")
+		elog("ERROR:" . "\n\r" . "$3");
+	}
+	else if ("*Nmap: Nmap done:*" iswm $3){
+		elog("nmap scan of $currentTarget completed, moving to next scan in queue");
+	}
+	else {}
+}
+
+on event_read {
+	local('$reduced $command @request $args');
+	$args = "";
+	$reduced = substr($1,(lindexOf($1, ">") + 2));
+	@request = split(' ', $reduced);
+	
+	if (@request[0] eq "!bot") {
+	$command = @request[1];
+	if (@request[2] eq "!now") {
+	elog("Saw !now");
+	remove(@request, "!now");
+	}
+	remove(@request, "!bot", $command);
+	foreach $var (@request){
+	$args .= ($var . " ");
+	}
+	}
+	else{}
+	
+	#COMMAND SWITCH SECTION
+	if ($command eq "scan") {
+	#elog("Args: $args");
+	#$args = strrep($args, " ","");
+	#elog("Scanning: $args");
+	scan($args);
+	}
+
+	if ($command eq "custom_scan") {
+		custom_scan($args);
+	}
+}
+
+
+
+
+
+
+
+
+
