@@ -1,5 +1,7 @@
 # namap-test script
 
+debug(7);
+
 global('$nmapconsole $currentTarget @scanQueue $scanning $botName @conf');
 
 elog("Initializing ScanBot...");
@@ -67,7 +69,7 @@ else
 	elog("No initial queue file found");
 }
 
-$canning = false;
+#$scanning = false;
 if (size(@scanQueue) > 0)
 {
 $currentTarget = @scanQueue[0];
@@ -154,7 +156,6 @@ sub drop_from_queue {
 }
 
 on heartbeat_15s {
-
 if (size(@scanQueue) > 0)
 {
 	if ($scanning == false) {
@@ -162,13 +163,8 @@ if (size(@scanQueue) > 0)
 		$currentTarget = @scanQueue[0];
 		scan($currentTarget);
 	}
-	if ($scanning eq "error") {
-		eglog("Nmap Errored, halting")
-		$scanning = "halt";
-	}
-	if ($scanning eq "halt") {
-	
-	}
+
+	else {}
 }
 }
 
@@ -204,6 +200,7 @@ on event_read {
 	}
 	if ($bot != true && (strlen($event) > 2)) {
 		$reduced = substr($event,(lindexOf($event, ">") + 2));
+		println($reduced);
 	}
 	else {
 		$reduced = "";
