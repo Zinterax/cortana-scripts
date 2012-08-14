@@ -157,10 +157,17 @@ on heartbeat_15s {
 
 if (size(@scanQueue) > 0)
 {
-	if ($scanning = false) {
+	if ($scanning == false) {
 		$scanning = true;
 		$currentTarget = @scanQueue[0];
 		scan($currentTarget);
+	}
+	if ($scanning eq "error") {
+		eglog("Nmap Errored, halting")
+		$scanning = "halt";
+	}
+	if ($scanning eq "halt") {
+	
 	}
 }
 }
@@ -170,8 +177,10 @@ on console {
 	if("*Nmap: 'QUITTING!'*" iswm $3){
 		elog("NMAP FAILED :\(")
 		elog("ERROR:" . "\n\r" . "$3");
-		$scanning = "error";
+		remove(@scanQueue, $currentTarget);
+		$scanning = false;
 	}
+
 	else if ("*Nmap: Nmap done:*" iswm $3){
 		elog("nmap scan of $currentTarget completed, moving to next scan in queue");
 		$temp = shift(@scanQueue);
