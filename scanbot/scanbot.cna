@@ -1,16 +1,90 @@
 # namap-test script
 
-global('$nmapconsole $currentTarget');
+global('$nmapconsole $currentTarget @scanQueue $scanning $botName @conf');
+
+elog("Initializing ScanBot...");
 
 on ready {
 $nmapconsole = console();
+if (-exists "./scanbot.conf") 
+{
+	if (-canread "./scanbot.conf")
+	{
+        	elog("Reading scanbot.conf...");
+		$handle = openf("./scanbot.conf");
+		@conf = readAll($handle);
+		closef($handle);
+	}
+
+}
+else
+{
+	elog("Can't find \.\/scanbot.conf make sure you have it!");
+}
+
+if (size(@conf) > 0)
+{
+	local('@option @confOption');
+	elog("Read scanbot.conf successfully");
+	foreach $var (@conf) {
+		$option = substr($var,(lindexOf($var, "=") + 1));
+		add(@confOption, $option, size(@confOption));
+	} 
+	$botName = @confOption[0];
+	$nmapParam = @confOption[1];
+	$initialQueueFile = @confOption[2];
+}
+
+elog("Checking for inital queue file...");
+
+if (-exists "$initialQueueFile")
+{
+	elog("Found: $initialQueueFile");
+	if(-canread "$initialQueueFile")
+	{
+		elog("Reading initial queue")
+		$handle = openf("$initialQueueFile");
+		@iQueue = readAll($handle);
+		closef($handle);
+		if (size(@iQueue) > 0) {
+		foreach $var (@iQueue)
+		{
+			queue_scan("$var");
+		}
+		elog("Done importing to queue");
+		}
+		else {
+		elog("$initialQueueFile was empty");
+		}
+	}
+	else
+	{
+		elog("Failed to read initial queue file");
+	}
+}
+else
+{
+	elog("No initial queue file found");
+}
+
+$canning = false;
+if (size(@scanQueue) > 0)
+{
+$currentTarget = @scanQueue[0];
+elog("Starting scanning...");
+scan($currentTarget);
+}
+else {
+elog("Scanning Queue is empty, waiting for targets...");
+}
 }
 
 sub scan {
+	$scanning = true;
 	$target = $1;
 	$currentTarget = $target;
 	elog("Attempting nmap scan of $target");
-	cmd($nmapconsole, "db_nmap -p 3389,80 $target");
+	cmd($nmapconsole, "db_nmap $nmapParam $target");
 }
 
 sub custom_scan {
@@ -18,6 +92,77 @@ sub custom_scan {
 	$currentTarget = $parms;
         elog("Attempting nmap scan with: $parms");
         cmd($nmapconsole, "db_nmap $parms");
+	$scanning = true;
+}
+
+sub queue_scan {
+	$target = $1;
+	elog("Placing $1 in queue");
+	add(@scanQueue, $target, size(@scanQueue));
+}
+
+sub queue_custom_scan {
+	$parms = "!C!;" . $1;
+	elog("Placing Custom scan $1 in queue");
+	add(@scanQueue, $parms, size(@scanQueue));
+	
+}
+
+sub queue_from_file {
+	$path = $1;
+	$path = left($path, (strlen($path) - 1));
+	elog("Path - \"$path\"");
+	if (-exists "$path")
+	{
+        	elog("Found: $path");
+        	if(-canread "$path")
+        	{
+                	elog("Reading $path")
+                	$handle = openf("$path");
+                	@iQueue = readAll($handle);
+                	closef($handle);
+                	foreach $var (@iQueue)
+                	{
+                        	queue_scan("$var");
+                	}
+        	}
+	}
+        else
+        {
+                elog("Failed to read $path");
+        }
+
+}
+
+sub show_queue {
+	local('$queue');
+	$queue = "\r\n\r\nCurrent Scanning Queue: \r\n";
+	foreach $var (@scanQueue) {
+	$queue .= "$var " . "\r\n";
+	}
+	elog("$queue");
+}
+
+sub clear_queue {
+	clear(@scanQueue);
+}
+
+sub drop_from_queue {
+	$path = $1;
+        $path = left($path, (strlen($path) - 1));
+	remove(@scanQueue, $path);
+}
+
+on heartbeat_15s {
+
+if (size(@scanQueue) > 0)
+{
+	if ($scanning = false) {
+		$scanning = true;
+		$currentTarget = @scanQueue[0];
+		scan($currentTarget);
+	}
+}
 }
 
 
@@ -25,42 +170,89 @@ on console {
 	if("*Nmap: 'QUITTING!'*" iswm $3){
 		elog("NMAP FAILED :\(")
 		elog("ERROR:" . "\n\r" . "$3");
+		$scanning = "error";
 	}
 	else if ("*Nmap: Nmap done:*" iswm $3){
 		elog("nmap scan of $currentTarget completed, moving to next scan in queue");
+		$temp = shift(@scanQueue);
+		if (size(@scanQueue) == 0) {
+			elog("Scanning Queue is empty, waiting for targets...");
+		}
+		$scanning = false;
 	}
 	else {}
 }
 
 on event_read {
-	local('$reduced $command @request $args');
+	local('$reduced $command @request $args $event @test $tester $bot $help');
 	$args = "";
-	$reduced = substr($1,(lindexOf($1, ">") + 2));
+	$event = $1;
+	$event = lc($event);
+	@test = split(" ", $event);
+	$tester = @test[2];
+	if($tester eq lc($botName)){ 
+		$bot = true; 
+	}
+	if ($bot != true && (strlen($event) > 2)) {
+		$reduced = substr($event,(lindexOf($event, ">") + 2));
+	}
+	else {
+		$reduced = "";
+	}
 	@request = split(' ', $reduced);
 	
 	if (@request[0] eq "!bot") {
-	$command = @request[1];
+		$command = @request[1];
 	if (@request[2] eq "!now") {
-	elog("Saw !now");
-	remove(@request, "!now");
+		elog("Saw !now");
+		remove(@request, "!now");
 	}
-	remove(@request, "!bot", $command);
-	foreach $var (@request){
-	$args .= ($var . " ");
+		remove(@request, "!bot", $command);
+		foreach $var (@request){
+		$args .= ($var . " ");
 	}
 	}
 	else{}
 	
 	#COMMAND SWITCH SECTION
 	if ($command eq "scan") {
-	#elog("Args: $args");
-	#$args = strrep($args, " ","");
-	#elog("Scanning: $args");
-	scan($args);
+		queue_scan($args);
 	}
 
 	if ($command eq "custom_scan") {
-		custom_scan($args);
+	#	queue_custom_scan($args);
+	}
+
+	if ($command eq "showqueue") {
+		show_queue();
+	}
+	
+	if ($command eq "help") {
+		$help = "\r\n\r\nScanner Bot Help:\r\n";
+		$help .= "Preface all commands with !bot\r\n";
+		$help .= "Commands: \r\n";
+		$help .= "scan \[!now\] \$targets - places \$targets into the scanning queue\r\n";
+		$help .= "filequeue \"\/path\/to\/file\" - Imports and queues the *LOCAL* file, put it on a share accessable by the server hosting the ScanBot\r\n";
+	#	$help .= "custom_scan \[!now\] \$parameters - places a custom scan with $parameters into the scanning queue\r\n";
+		$help .= "showqueue - Dumps the current scanning queue to the event log\r\n";
+		$help .= "drop $target - Drops the given $target from the queue\r\n";
+		$help .= "clearqueue - Completely empties the queue \r\n";
+		elog($help);
+	}
+
+	if ($command eq "filequeue") {
+		queue_from_file($args);
+		
+	}
+
+	if ($command eq "clearqueue") {
+		elog("Clearing the Scan Queue");
+		clear_queue();
+	}
+
+	if ($command eq "drop") {
+		elog("dropping $args from Scan Queue");
+		drop_from_queue($args);
 	}
 }
 
