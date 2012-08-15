@@ -67,15 +67,15 @@ else
 	elog("No initial queue file found");
 }
 
-#$scanning = false;
+$scanning = false;
 if (size(@scanQueue) > 0)
 {
-$currentTarget = @scanQueue[0];
-elog("Starting scanning...");
-scan($currentTarget);
+	$currentTarget = @scanQueue[0];
+	elog("Starting scanning...");
+	scan($currentTarget);
 }
 else {
-elog("Scanning Queue is empty, waiting for targets...");
+	elog("Scanning Queue is empty, waiting for targets...");
 }
 }
 
@@ -160,9 +160,8 @@ sub drop_from_queue {
 }
 
 on heartbeat_15s {
-if (size(@scanQueue) > 0)
-{
-	if ($scanning == false) {
+	if (size(@scanQueue) > 0 && $scanning == false)
+	{
 		$scanning = true;
 		$currentTarget = @scanQueue[0];
 		scan($currentTarget);
@@ -170,13 +169,12 @@ if (size(@scanQueue) > 0)
 
 	else {}
 }
-}
 
 on heartbeat_60m {
-if (size(@scanQueue) == 0)
-{
-	elog("Scanning Queue is empty, waiting for jobs...");
-}
+	if (size(@scanQueue) == 0)
+	{
+		elog("Scanning Queue is empty, waiting for jobs...");
+	}
 }
 
 
