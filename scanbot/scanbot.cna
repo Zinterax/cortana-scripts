@@ -2,14 +2,21 @@
 
 debug(7);
 
-global('$nmapconsole $currentTarget @scanQueue $scanning $botName $nmapParam');
+global('$nmapconsole $currentTarget @scanQueue $scanning $botName $nmapParam $pause $pauseLater $pauseTime');
 
 elog("Initializing ScanBot...");
 
 on ready {
-local('@conf $confPath $handle $initialQueueFile');
+initialize();
+}
+
+sub initialize {
+
+local('@conf $confPath $handle $initialQueueFile @iQueue');
 $confPath = script_resource("scanbot.conf");
 $nmapconsole = console();
+$pause = false;
+$pauseTime = 0;
 if (-exists $confPath && -canread $confPath) 
 {
 	elog("Reading scanbot.conf...");
@@ -98,8 +105,16 @@ sub custom_scan {
 }
 
 sub queue_scan {
-	local('$target');
-	$target = left($1, -1);
+	local('$target $lastChar');
+	$lastChar = charAt($1, -1);
+	if ($lastChar eq " ")
+	{
+		$target = left($1, -1);
+	}
+	else
+	{
+		$target = $1
+	}
 	elog("Placing \"$target\" in queue");
 	add(@scanQueue, $target, size(@scanQueue));
 }
@@ -109,6 +124,58 @@ sub queue_custom_scan {
 	$parms = "!C!;" . $1;
 	elog("Placing Custom scan $1 in queue");
 	add(@scanQueue, $parms, size(@scanQueue));
+	
+}
+
+sub pause_scan {
+	local('$arg $lastChar @toggle $time $var');
+        $lastChar = charAt($1, -1);
+        if ($lastChar eq " ")
+        {
+                $arg = left($1, -1);
+        }
+        else
+        {
+                $arg = $1
+        }
+	$arg = lc($arg);
+	@toggle = split(" ", $arg);
+	
+	if (@toggle[0] eq "on") {
+		$pause = true;
+		elog("Scan Queue Paused after completing scanning of $currentTarget");
+	}
+	else if (@toggle[0] eq "off") {
+		$pause = false;
+		elog("Scan Queue resumed from paused state");
+	}
+	else if (@toggle[0] eq "at" ) {
+		$pauseLater = true;
+		remove(@toggle, "at");
+		foreach $var (@toggle) {
+		$time .= ($var . " ");
+		}
+		$time = left($time, -1);
+		$pauseTime = parseDate('MM/dd/y HH:mm', $time);
+		$pauseLater = true;
+		elog("Pause scheduled for $time");
+	}
+	else {
+		elog("Error: Use pause \{on|off|\{at\} mm/dd/yy HH:mm\} to toggle pausing of scan queue");
+	}
+}
+
+on heartbeat_5s
+{
+	local('$now')
+	$now = ticks();
+	if ($now >= $pauseTime && $pause != true && $pauseLater == true)
+	{
+		$pause = true;
+		elog("Reached scheduled pause time. Pausing after this scan completes");
+		$pauseTime = 0;
+		$pauseLater = false;
+	}
 	
 }
 
@@ -159,8 +226,13 @@ sub drop_from_queue {
 	remove(@scanQueue, $path);
 }
 
+sub full_stop {
+	clear_queue()
+	cmd_stop($nmapconsole);
+}
+
 on heartbeat_15s {
-	if (size(@scanQueue) > 0 && $scanning == false)
+	if (size(@scanQueue) > 0 && $scanning == false && $pause == false)
 	{
 		$scanning = true;
 		$currentTarget = @scanQueue[0];
@@ -177,26 +249,38 @@ on heartbeat_60m {
 	}
 }
 
+on console_db_nmap {
+        local('$temp @test');
+	@test = split("\n", $3);
+        if("*Nmap: 'QUITTING!'*" iswm @test[2]){
+                elog("NMAP FAILED :\(")
+                elog("ERROR:" . "\n\r" . "$3");
+                remove(@scanQueue, $currentTarget);
+                $scanning = false;
+                elog("Removed $currentTarget from the queue");
+        }
 
-on console {
-	local('$temp');
-	if("*Nmap: 'QUITTING!'*" iswm $3){
-		elog("NMAP FAILED :\(")
-		elog("ERROR:" . "\n\r" . "$3");
+        else if ("*Nmap: 'WARNING:*" iswm @test[2] || "*Nmap: 'WARNING:*" iswm @test[3]){
+                elog("WARNING:" . "\n\r" . "$3");
 		remove(@scanQueue, $currentTarget);
-		$scanning = false;
-		elog("Removed $currentTarget from the queue");
-	}
+                $scanning = false;
+                elog("Removed $currentTarget from the queue");
 
-	else if ("*Nmap: Nmap done:*" iswm $3){
-		elog("nmap scan of $currentTarget completed, moving to next scan in queue");
-		$temp = shift(@scanQueue);
-		if (size(@scanQueue) == 0) {
-			elog("Scanning Queue is empty, waiting for targets...");
-		}
-		$scanning = false;
 	}
-	else {}
+        else {
+		if (!$pause) {
+			elog("nmap scan of $currentTarget completed, moving to next scan in queue...");
+		}
+		else {
+			elog("nmap scan of $currentTarget completed, Queue is paused, waiting to resume...");
+		}
+                $temp = shift(@scanQueue);
+                if (size(@scanQueue) == 0) {
+                        elog("Scanning Queue is empty, waiting for targets...");
+                }
+                $scanning = false;
+
+	}
 }
 
 on event_read {
@@ -246,12 +330,16 @@ on event_read {
 		$help = "\r\n\r\nScanner Bot Help:\r\n";
 		$help .= "Preface all commands with !bot\r\n";
 		$help .= "Commands: \r\n";
-		$help .= "scan \[!now\] \$targets - places \$targets into the scanning queue\r\n";
-		$help .= "filequeue \"\/path\/to\/file\" - Imports and queues the *LOCAL* file, put it on a share accessable by the server hosting the ScanBot\r\n";
+		$help .= "scan {target} - places \$target into the scanning queue\r\n";
+		$help .= "filequeue \{\"\/path\/to\/file\}\" - Imports and queues the *LOCAL* file, put it on a share accessable by the server hosting the ScanBot\r\n";
 	#	$help .= "custom_scan \[!now\] \$parameters - places a custom scan with $parameters into the scanning queue\r\n";
 		$help .= "showqueue - Dumps the current scanning queue to the event log\r\n";
-		$help .= "drop \$target - Drops the given \$target from the queue\r\n";
+		$help .= "drop \{target} - Drops the given \$target from the queue\r\n";
 		$help .= "clearqueue - Completely empties the queue \r\n";
+		$help .= "pause \{on|off|\{at\} HH:mm:yy\} : toggles pausing after the current scan completes - THIS DOES NOT PAUSE THE CURRENT SCAN!\r\n";
+		$help .= "resume : alias for \"pause off\"";
+		$help .= "fullstop : This is the KILL button. Press it in emergencies\r\n";
+		$help .= "restart : This re-initializes the bot, it will re-add targets in your defined initial queue file if present";
 		elog($help);
 	}
 
@@ -269,6 +357,28 @@ on event_read {
 		elog("dropping $args from Scan Queue");
 		drop_from_queue($args);
 	}
+
+	if ($command eq "fullstop") {
+		elog("Killing scans and clearing queue!");
+		full_stop();
+		elog("Everything dead, issue !bot restart to recover");
+	}
+
+	if ($command eq "restart") {
+		elog("Killing scans, clearing queue and restarting...");
+		full_stop();
+		initialize();
+	}
+
+	if ($command eq "pause") {
+		pause_scan($args);
+	}
+
+	if ($command eq "resume") {
+		pause_scan("off");
+	}
+
+
 }
 
 
