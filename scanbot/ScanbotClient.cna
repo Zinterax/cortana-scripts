@@ -35,6 +35,9 @@ popup host_bottom {
 			item "&Clear Queue" {
 				elog("> clearq");
 			}
+			item "&Dump Queue to File" {
+				elog("> dumpq");
+			}
 		}
 		menu "&Active" {
 			item "&Pause" {
