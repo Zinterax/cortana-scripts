@@ -2,7 +2,7 @@
 
 debug(7);
 
-global('$nmapconsole $currentTarget @scanQueue $scanning $botName $nmapParam $pause $pauseLater $pauseTime');
+global('$nmapconsole $currentTarget @scanQueue $scanning $botName $nmapParam $pause $pauseLater $pauseTime $queueFile $initialQueueFile');
 
 elog("Initializing ScanBot...");
 
@@ -12,11 +12,14 @@ initialize();
 
 sub initialize {
 
-local('@conf $confPath $handle $initialQueueFile @iQueue');
+local('@conf $confPath $handle @iQueue');
+
 $confPath = script_resource("scanbot.conf");
 $nmapconsole = console();
 $pause = false;
 $pauseTime = 0;
+$queueFile = script_resource("queueFile.txt");
+
 if (-exists $confPath && -canread $confPath) 
 {
 	elog("Reading scanbot.conf...");
@@ -42,36 +45,16 @@ if (size(@conf) > 0)
 	($botName, $nmapParam, $initialQueueFile) = @confOption;
 }
 
-elog("Checking for inital queue file...");
+$initialQueueFile = script_resource($initialQueueFile);
 
-if (-exists "$initialQueueFile")
-{
-	elog("Found: $initialQueueFile");
-	if(-canread "$initialQueueFile")
-	{
-		elog("Reading initial queue")
-		$handle = openf("$initialQueueFile");
-		@iQueue = readAll($handle);
-		closef($handle);
-		if (size(@iQueue) > 0) {
-		foreach $address (@iQueue)
-		{
-			queue_scan("$address");
-		}
-			elog("Done importing to queue");
-		}
-		else {
-			elog("$initialQueueFile was empty");
-		}
-	}
-	else
-	{
-		elog("Failed to read initial queue file");
-	}
+if (-exists $queueFile) {
+	elog("Queue File found!");
+	elog("Use \"!bot importqf\" to reload your previous queue (will remove after importing)");
 }
-else
-{
-	elog("No initial queue file found");
+
+if (-exists $initialQueueFile) {
+	elog("Initial Queue file found!");
+	elog("Use \"!bot importiq\" to import these addresses");
 }
 
 $scanning = false;
@@ -104,6 +87,13 @@ sub custom_scan {
 	$scanning = true;
 }
 
+sub import_initial_queue {
+	local('$path');
+	$path = $initialQueueFile;
+	queue_from_file($path);
+	elog("IQF: $path");
+}
+
 sub queue_scan {
 	local('$target $lastChar');
 	$lastChar = charAt($1, -1);
@@ -115,8 +105,14 @@ sub queue_scan {
 	{
 		$target = $1
 	}
+	if($target in @scanQueue)
+	{
+		elog("\"$target\" already in queue, skipping");
+	}
+	else {
 	elog("Placing \"$target\" in queue");
 	add(@scanQueue, $target, size(@scanQueue));
+	}
 }
 
 sub queue_custom_scan {
@@ -165,6 +161,30 @@ sub pause_scan {
 	}
 }
 
+sub write_queue_to_file {
+	local('$job $handle');
+	if (size(@scanQueue) > 0) {
+        	elog("Dumping queue to queueFile.txt");
+		if (!-exists "$queueFile")
+		{
+		createNewFile($queueFile);
+		}
+		$handle = openf(">$queueFile");
+        	foreach $job (@scanQueue) {
+        	println($handle, $job);
+        	}
+		closef($handle);
+	}
+	else {
+		elog("Scan Queue is empty, nothing to save!");
+	}
+}
+sub read_queue_from_file {
+	queue_from_file($queueFile);
+	deleteFile("$queueFile");
+}
+
+
 on heartbeat_5s
 {
 	local('$now')
@@ -180,10 +200,16 @@ on heartbeat_5s
 }
 
 sub queue_from_file {
-	local('$address @iQueue $handle $path');
-	$path = $1;
-	$path = left($path, -1);
-	#elog("Path - \"$path\"");
+	local('$address @iQueue $handle $path $lastChar');
+	$lastChar = charAt($1, -1);
+        if ($lastChar eq " ")
+        {
+                $path = left($1, -1);
+        }
+        else
+        {
+                $path = $1
+        }
 	if (-exists "$path")
 	{
         	elog("Found: $path");
@@ -227,8 +253,39 @@ sub drop_from_queue {
 }
 
 sub full_stop {
-	clear_queue()
-	cmd_stop($nmapconsole);
+	write_queue_to_file();
+	clear_queue();
+	kill_nmap();
+}
+
+sub kill_nmap {
+	elog("Killing nmap...");
+        spawn({
+                on console {
+                        local('$ps @found $pid $test $var @temp')
+                        @temp = split('\s+',$3);
+                        $pid = @temp[8];
+                        cmd_async("/bin/kill $pid");
+                        quit();
+
+                }
+                cmd_async("ps -waux | grep nmap");
+        });
+	elog("Dead.");
+}
+
+sub SHUT_DOWN_EVERYTHING {
+	elog("Shutting Down...");
+	if (size(@scanQueue) > 0) { 
+	elog("Queue not empty, dumping to disk"); 
+	write_queue_to_file(); 
+	}
+	if ($scanning) { 
+	kill_nmap(); 
+	}
+	clear_queue();
+	elog("Signing Off..");
+	quit();
 }
 
 on heartbeat_15s {
@@ -322,33 +379,36 @@ on event_read {
 	#	queue_custom_scan($args);
 	}
 
-	if ($command eq "showqueue") {
+	if ($command eq "showqueue" || $command eq "showq") {
 		show_queue();
 	}
 	
 	if ($command eq "help") {
+	#	$help .= "!bot ";
 		$help = "\r\n\r\nScanner Bot Help:\r\n";
-		$help .= "Preface all commands with !bot\r\n";
 		$help .= "Commands: \r\n";
-		$help .= "scan {target} - places \$target into the scanning queue\r\n";
-		$help .= "filequeue \{\"\/path\/to\/file\}\" - Imports and queues the *LOCAL* file, put it on a share accessable by the server hosting the ScanBot\r\n";
+		$help .= "!bot scan {target} - places \$target into the scanning queue\r\n";
+		$help .= "!bot importfile \{\"\/path\/to\/file\}\" - Imports and queues the *LOCAL* file, put it on a share accessable by the server hosting the ScanBot\r\n";
+		$help .= "!bot importqf : attempts to import the saved queue file. Useful for resuming after shutting down";
+		$help .= "!bot importif : attempts to import from the \"initial queue file\" defined in \"scanbot.conf\"";
 	#	$help .= "custom_scan \[!now\] \$parameters - places a custom scan with $parameters into the scanning queue\r\n";
-		$help .= "showqueue - Dumps the current scanning queue to the event log\r\n";
-		$help .= "drop \{target} - Drops the given \$target from the queue\r\n";
-		$help .= "clearqueue - Completely empties the queue \r\n";
-		$help .= "pause \{on|off|\{at\} HH:mm:yy\} : toggles pausing after the current scan completes - THIS DOES NOT PAUSE THE CURRENT SCAN!\r\n";
-		$help .= "resume : alias for \"pause off\"";
-		$help .= "fullstop : This is the KILL button. Press it in emergencies\r\n";
-		$help .= "restart : This re-initializes the bot, it will re-add targets in your defined initial queue file if present";
+		$help .= "!bot showq - Dumps the current scanning queue to the event log\r\n";
+		$help .= "!bot drop \{target} - Drops the given \$target from the queue\r\n";
+		$help .= "!bot clearq - Completely empties the queue \r\n";
+		$help .= "!bot pause \{on|off|\{at\} HH:mm:yy\} : toggles pausing after the current scan completes - THIS DOES NOT PAUSE THE CURRENT SCAN!\r\n";
+		$help .= "!bot resume : alias for \"pause off\"";
+		$help .= "!bot fullstop : This is the KILL button. Press it in emergencies\r\n";
+		$help .= "!bot restart : This re-initializes the bot, it will re-add targets in your defined initial queue file if present";
+		$help .= "!bot shutdown : This shuts down ScanBot. Will cancel any running scans, and if there is a Queue, dump it to disk";
 		elog($help);
 	}
 
-	if ($command eq "filequeue") {
+	if ($command eq "filequeue" || $command eq "importfile") {
 		queue_from_file($args);
 		
 	}
 
-	if ($command eq "clearqueue") {
+	if ($command eq "clearqueue" || $command eq "clearq") {
 		elog("Clearing the Scan Queue");
 		clear_queue();
 	}
@@ -365,7 +425,8 @@ on event_read {
 	}
 
 	if ($command eq "restart") {
-		elog("Killing scans, clearing queue and restarting...");
+		elog("Killing scans, saving queue and restarting...");
+		write_queue_to_file();	
 		full_stop();
 		initialize();
 	}
@@ -378,14 +439,26 @@ on event_read {
 		pause_scan("off");
 	}
 
+	if ($command eq "test") {
+	local('$remotePath $localPath')
+	$localPath = prompt_open_file("test");
+	}
+
+	if ($command eq "dumpq") {
+		write_queue_to_file();
+	}
+
+	if ($command eq "shutdown") {
+		#A MAN IN BRAZIL IS COUGHING
+		SHUT_DOWN_EVERYTHING();
+	}
+
+	if ($command eq "importqf") {
+		read_queue_from_file();
+	}
+	
+	if ($command eq "importiq") {
+		import_initial_queue(); 	
+	}
 
 }
-
-
-
-
-
-
-
-
-
