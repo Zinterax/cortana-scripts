@@ -1,0 +1,12 @@
+popup host_bottom {
+        local('@selected $target $text');
+        item "&Copy" {
+                $text ="";
+                @selected = targets_selected();
+                foreach $target (@selected) {
+                $text .= ($target . "\n");
+                }
+                clipboard_set($text);
+        }
+}
+

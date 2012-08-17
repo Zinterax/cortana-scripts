@@ -77,22 +77,3 @@ popup host_bottom {
 		
 	}
 }
-
-popup host_top {
-	local('@selected $target $text @ports');
-	item "&Copy" {
-		$text ="";
-		@selected = targets_selected();
-		foreach $target (@selected) {
-		$text .= ($target . "\n");
-		}
-		clipboard_set($text);
-	}
-#	item "&Browse" {
-#		@selected = targets_selected();
-#		foreach $target (@selected) {
-#		url_open("www.google.com");
-#		}
-#	}	
-	
-}
