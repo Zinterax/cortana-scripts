@@ -139,7 +139,7 @@ sub pause_scan {
 	
 	if (@toggle[0] eq "on") {
 		$pause = true;
-		elog("Scan Queue Paused after completing scanning of $currentTarget");
+		elog("Scan Queue Paused after completing scanning.");
 	}
 	else if (@toggle[0] eq "off") {
 		$pause = false;
@@ -334,6 +334,7 @@ on console_db_nmap {
                 $temp = shift(@scanQueue);
                 if (size(@scanQueue) == 0) {
                         elog("Scanning Queue is empty, waiting for targets...");
+			$currentTarget = "";
                 }
                 $scanning = false;
 
@@ -341,7 +342,9 @@ on console_db_nmap {
 }
 
 on event_read {
-	local('$reduced $command $var @request $args $event @test $tester $bot $help');
+	local('$reduced $command $var @request $args $event @test $tester $bot $help @message');
+	@message = parse_event($1);
+	println(@message[2]);
 	$args = "";
 	$event = $1;
 	$event = lc($event);

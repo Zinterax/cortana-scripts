@@ -1,0 +1,98 @@
+#test client
+
+popup host_bottom {
+	menu "Scanbot" {
+		item "&Show Queue" {
+                        elog("> !bot showq");
+                        }
+		item "&Scan Target" {
+                        local ('$target')
+                        $target = prompt_text("Target to add to queue:");
+                        elog("> !bot scan $target");
+		}
+		menu "Import" {
+			item "&Import Local File" {
+				local ('$localPath $remotePath')
+				$localPath = prompt_file_open("Select File to import");
+				$remotePath = file_put($localPath);
+				elog("> !bot importfile $remotePath");
+			}
+			item "&Import QueueFile" {
+                        	elog("> !bot importqf");
+               		}
+			item "&Import Initial File" {
+				elog("> !bot importiq");
+			}
+
+		}
+		menu "&Manage Queue" {
+			item "&Drop Target" {
+                        	local ('$target')
+                        	$target = prompt_text("Target to remove from queue:");
+                        	$remotePath = file_put($target);
+                        	elog("> !bot drop $target");
+               		}
+			item "&Clear Queue" {
+				elog("> clearq");
+			}
+		}
+		menu "&Active" {
+			item "&Pause" {
+				elog("> !bot pause on");
+			}
+			item "&Resume" {
+				elog("> !bot pause off");
+			}
+			item "&Schedule Pause" {
+				local('$time');
+				$time = prompt_text("Time to Pause (24 hour time): mm/dd/yy HH:mm");
+				elog("> !bot pause at $time");
+			}
+		}
+		menu "&Power" {
+			item "&Restart" {
+			#	local('$restart');
+			#	$restart = prompt_yes_no("Restart", "Are you sure you want to Restart the bot?");
+                        #       if ($shutdown) {
+                                        elog("> !bot restart");
+                        #        }
+
+			}
+			item "&Shutdown" {
+			#	local('$shutdown');
+			#	$shutdown = prompt_yes_no("Shutdown", "Are you sure you want to Shutdown the bot?");
+			#	if ($shutdown) {
+					elog("> !bot shutdown");
+			#	}
+			}
+		}
+		item "&Panic Button" {
+	       	#	local('$panic');
+                       # $panic = prompt_yes_no("PANIC", "This kills the bot and all running scans, Are you sure?");
+                        #        if ($panic) {
+                                        elog("> !bot forcestop");
+                         #       }
+		}
+		
+		
+	}
+}
+
+popup host_top {
+	local('@selected $target $text @ports');
+	item "&Copy" {
+		$text ="";
+		@selected = targets_selected();
+		foreach $target (@selected) {
+		$text .= ($target . "\n");
+		}
+		clipboard_set($text);
+	}
+#	item "&Browse" {
+#		@selected = targets_selected();
+#		foreach $target (@selected) {
+#		url_open("www.google.com");
+#		}
+#	}	
+	
+}
