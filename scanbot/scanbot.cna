@@ -398,7 +398,7 @@ on event_read {
 		$help .= "!bot showq - Dumps the current scanning queue to the event log\r\n";
 		$help .= "!bot drop \{target} - Drops the given \$target from the queue\r\n";
 		$help .= "!bot clearq - Completely empties the queue \r\n";
-		$help .= "!bot pause \{on|off|\{at\} HH:mm:yy\} : toggles pausing after the current scan completes - THIS DOES NOT PAUSE THE CURRENT SCAN!\r\n";
+		$help .= "!bot pause \{on|off|\{at\} mm/dd/yy HH:mm\} : toggles pausing after the current scan completes - THIS DOES NOT PAUSE THE CURRENT SCAN!\r\n";
 		$help .= "!bot resume : alias for \"pause off\"";
 		$help .= "!bot fullstop : This is the KILL button. Press it in emergencies\r\n";
 		$help .= "!bot restart : This re-initializes the bot, it will re-add targets in your defined initial queue file if present";
